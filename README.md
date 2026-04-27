@@ -1,38 +1,9 @@
 # ⚽ Football Prediction Telegram Bot
 
-Predicts football matches using **stats + Google Gemini AI** (free!).
+Predicts football matches using **stats + Google Gemini AI**.
 
 **Markets:** 1X2 · BTTS · Over/Under · Correct Score · Expected Corners
 
----
-
-## 🚀 Setup Guide
-
-### 1. Get a Telegram Bot Token (free)
-1. Open Telegram → search **@BotFather**
-2. Send `/newbot` → follow prompts
-3. Copy the token (e.g. `7123456789:AAFxyz...`)
-
-### 2. Get a Google Gemini API Key (free, no credit card)
-1. Go to → https://aistudio.google.com/apikey
-2. Sign in with your Google account
-3. Click **Create API Key**
-4. Copy the key (starts with `AIza...`)
-
-### 3. Upload to GitHub
-1. Create a new repo at github.com
-2. Upload: `bot.py`, `predictor.py`, `requirements.txt`, `Procfile`
-
-### 4. Deploy on Railway (free hosting)
-1. Go to → https://railway.app
-2. Sign up with GitHub
-3. **New Project → Deploy from GitHub repo** → select your repo
-4. Go to **Variables** tab and add:
-   - `TELEGRAM_BOT_TOKEN` = your Telegram token
-   - `GEMINI_API_KEY` = your Gemini API key
-5. Railway auto-deploys — your bot is live! ✅
-
----
 
 ## 🎮 How to Use the Bot
 
