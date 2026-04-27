@@ -1,6 +1,7 @@
 """
 Football Prediction Engine - Optimized for speed
 Uses football-data.org + Gemini AI
+Plain text output to avoid Telegram Markdown parse errors.
 """
 
 import os
@@ -19,8 +20,6 @@ MARKET_NAMES = {
 }
 
 FOOTBALL_DATA_BASE = "https://api.football-data.org/v4"
-
-# Search these competitions in parallel (all free tier)
 COMPETITIONS = ["PL", "PD", "BL1", "SA", "FL1", "CL"]
 
 
@@ -46,10 +45,9 @@ class FootballDataClient:
         self.headers = {"X-Auth-Token": api_key}
 
     async def find_team_in_competition(self, session, comp: str, name: str) -> Optional[dict]:
-        """Check one competition for a team."""
         url = f"{FOOTBALL_DATA_BASE}/competitions/{comp}/teams"
         try:
-            async with session.get(url, headers=self.headers, timeout=aiohttp.ClientTimeout(total=5)) as resp:
+            async with session.get(url, headers=self.headers, timeout=aiohttp.ClientTimeout(total=6)) as resp:
                 if resp.status != 200:
                     return None
                 data = await resp.json()
@@ -58,15 +56,13 @@ class FootballDataClient:
                     t_name = team.get("name", "").lower()
                     t_short = team.get("shortName", "").lower()
                     t_tla = team.get("tla", "").lower()
-                    if (name_lower in t_name or name_lower in t_short
-                            or t_tla == name_lower):
+                    if (name_lower in t_name or name_lower in t_short or t_tla == name_lower):
                         return team
         except Exception:
             pass
         return None
 
     async def search_team(self, session, name: str) -> Optional[dict]:
-        """Search all competitions IN PARALLEL — much faster."""
         tasks = [self.find_team_in_competition(session, comp, name) for comp in COMPETITIONS]
         results = await asyncio.gather(*tasks, return_exceptions=True)
         for r in results:
@@ -75,21 +71,19 @@ class FootballDataClient:
         return None
 
     async def get_team_matches(self, session, team_id: int) -> list:
-        """Get last 5 finished matches for a team."""
         url = f"{FOOTBALL_DATA_BASE}/teams/{team_id}/matches"
         params = {"status": "FINISHED", "limit": 5}
         try:
             async with session.get(url, headers=self.headers, params=params,
-                                   timeout=aiohttp.ClientTimeout(total=5)) as resp:
+                                   timeout=aiohttp.ClientTimeout(total=6)) as resp:
                 if resp.status != 200:
                     return []
                 data = await resp.json()
-                matches = data.get("matches", [])
-                return matches[-5:]
+                return data.get("matches", [])[-5:]
         except Exception:
             return []
 
-    def extract_form(self, matches: list, team_id: int) -> list:
+    def extract_form(self, matches, team_id):
         form = []
         for m in matches:
             home_id = m.get("homeTeam", {}).get("id")
@@ -102,7 +96,7 @@ class FootballDataClient:
                 form.append("W" if ag > hg else "D" if ag == hg else "L")
         return form
 
-    def extract_goal_averages(self, matches: list, team_id: int) -> tuple:
+    def extract_goal_averages(self, matches, team_id):
         if not matches:
             return 1.5, 1.2
         scored, conceded = 0, 0
@@ -129,7 +123,6 @@ def form_to_points(form):
 def compute_summary(stats: MatchStats) -> dict:
     hfp = form_to_points(stats.home_form)
     afp = form_to_points(stats.away_form)
-
     xg_h = (stats.home_goals_scored + stats.away_goals_conceded) / 2 * 1.1
     xg_a = (stats.away_goals_scored + stats.home_goals_conceded) / 2
     tot_g = xg_h + xg_a
@@ -138,7 +131,6 @@ def compute_summary(stats: MatchStats) -> dict:
     hwp = min(0.75, max(0.15, 0.45 + (hfp - afp) * 0.05 + (xg_h - xg_a) * 0.08))
     dp = max(0.10, 0.27 - abs(hfp - afp) * 0.03)
     awp = max(0.05, 1.0 - hwp - dp)
-
     return {
         "xg_home": round(xg_h, 2), "xg_away": round(xg_a, 2),
         "total_goals": round(tot_g, 2), "total_corners": round(tot_c, 1),
@@ -152,6 +144,13 @@ def compute_summary(stats: MatchStats) -> dict:
         "home_label": stats.home_team_full or stats.home_team,
         "away_label": stats.away_team_full or stats.away_team,
     }
+
+
+def clean_text(text: str) -> str:
+    """Strip markdown symbols that break Telegram's parser."""
+    for ch in ["*", "_", "`", "[", "]", "(", ")"]:
+        text = text.replace(ch, "")
+    return text.strip()
 
 
 class FootballPredictor:
@@ -171,15 +170,13 @@ class FootballPredictor:
             return stats
         try:
             async with aiohttp.ClientSession() as session:
-                # Search both teams in parallel
                 home_team, away_team = await asyncio.gather(
                     self.fd.search_team(session, home),
                     self.fd.search_team(session, away),
                 )
-                # Fetch matches in parallel
                 home_matches, away_matches = await asyncio.gather(
-                    self.fd.get_team_matches(session, home_team["id"]) if home_team else asyncio.coroutine(lambda: [])(),
-                    self.fd.get_team_matches(session, away_team["id"]) if away_team else asyncio.coroutine(lambda: [])(),
+                    self.fd.get_team_matches(session, home_team["id"]) if home_team else asyncio.sleep(0, result=[]),
+                    self.fd.get_team_matches(session, away_team["id"]) if away_team else asyncio.sleep(0, result=[]),
                 )
 
             if home_team and home_matches:
@@ -201,45 +198,44 @@ class FootballPredictor:
         return stats
 
     async def predict(self, home_team: str, away_team: str, markets: list) -> str:
-        # Run stats fetch and nothing else — fast path
         stats = await self.build_stats(home_team, away_team)
         s = compute_summary(stats)
         market_labels = [MARKET_NAMES.get(m, m) for m in markets]
 
-        prompt = f"""Expert football analyst. Predict this match concisely.
+        prompt = f"""You are a football prediction expert. Give a direct prediction for this match.
 
 Match: {s['home_label']} (Home) vs {s['away_label']} (Away)
-Stats ({'live' if s['data_source'] == 'live' else 'estimated'}):
-- Home xG {s['xg_home']} | Form {' '.join(s['home_form'])}
-- Away xG {s['xg_away']} | Form {' '.join(s['away_form'])}
-- Total xG {s['total_goals']} | Corners {s['total_corners']}
-- BTTS {s['btts_pct']}% | 1X2: H{s['home_win_pct']}% D{s['draw_pct']}% A{s['away_win_pct']}%
+Data: {'Live stats' if s['data_source'] == 'live' else 'AI estimated'}
+Home xG: {s['xg_home']} | Form: {' '.join(s['home_form'])}
+Away xG: {s['xg_away']} | Form: {' '.join(s['away_form'])}
+Total xG: {s['total_goals']} | Corners: {s['total_corners']}
+BTTS: {s['btts_pct']}% | 1X2: Home {s['home_win_pct']}% Draw {s['draw_pct']}% Away {s['away_win_pct']}%
 
-Markets: {', '.join(market_labels)}
+Markets to predict: {', '.join(market_labels)}
 
-For each market: Pick | Confidence (Low/Med/High) | 1-2 sentence reason.
-End with one overall verdict sentence. Be concise and direct."""
+IMPORTANT: Reply in plain text only. No markdown, no asterisks, no underscores, no special formatting.
+For each market write: MARKET NAME: Pick | Confidence | Reason (1-2 sentences)
+End with: VERDICT: one sentence summary."""
 
         response = self.model.generate_content(prompt)
+        ai_text = clean_text(response.text)
 
-        src = "🟢 Live stats" if s["data_source"] == "live" else "🟡 AI estimated"
+        src = "Live stats" if s["data_source"] == "live" else "AI estimated"
         form_h = " ".join(s["home_form"])
         form_a = " ".join(s["away_form"])
 
+        # Plain text output — no Markdown at all
         return (
-            f"⚽ *{s['home_label']}* vs *{s['away_label']}*\n"
-            f"{'─'*30}\n"
-            f"📊 {src}\n"
-            f"🏠 xG `{s['xg_home']}` | Form `{form_h}`\n"
-            f"✈️ xG `{s['xg_away']}` | Form `{form_a}`\n"
-            f"🎯 Goals `{s['total_goals']}` | Corners `{s['total_corners']}`\n\n"
-            f"{'─'*30}\n"
-            f"🤖 *Predictions*\n\n"
-            f"{response.text}\n\n"
-            f"{'─'*30}\n"
-            "⚠️ _Entertainment only. Gamble responsibly._\n"
-            "▶️ /predict for another match."
+            f"⚽ {s['home_label']} vs {s['away_label']}\n"
+            f"{'='*32}\n"
+            f"📊 Stats ({src})\n"
+            f"🏠 xG: {s['xg_home']} | Form: {form_h}\n"
+            f"✈️  xG: {s['xg_away']} | Form: {form_a}\n"
+            f"🎯 Goals: {s['total_goals']} | Corners: {s['total_corners']}\n"
+            f"{'='*32}\n"
+            f"🤖 Predictions\n\n"
+            f"{ai_text}\n\n"
+            f"{'='*32}\n"
+            f"⚠️ For entertainment only. Gamble responsibly.\n"
+            f"Tap /predict for another match."
         )
-  
-
-
