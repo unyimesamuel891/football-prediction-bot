@@ -43,3 +43,54 @@ Built with Python and deployed on Railway.
 6. Bot returns a structured prediction with reasoning
 
 ### Optional Stats Format
+Home form: W W D L W
+Away form: L W W D L
+Home avg goals scored: 1.8
+Away avg goals scored: 1.2
+Home avg goals conceded: 0.9
+Away avg goals conceded: 1.5
+Home avg corners: 5.5
+Away avg corners: 4.2
+
+---
+
+## Project Structure
+
+| File | Purpose |
+|---|---|
+| `bot.py` | Telegram bot logic and conversation handler |
+| `predictor.py` | Stats engine + Gemini AI integration |
+| `requirements.txt` | Python dependencies |
+| `Procfile` | Railway deployment config |
+
+---
+
+## Local Setup
+
+```bash
+git clone https://github.com/unyimesamuel891/football-prediction-bot.git
+cd football-prediction-bot
+pip install -r requirements.txt
+```
+
+Create a `.env` file with your credentials:
+TELEGRAM_BOT_TOKEN=your_token_here
+GEMINI_API_KEY=your_key_here
+
+Then run:
+
+```bash
+python bot.py
+```
+
+---
+
+## Deployment
+
+Deployed on **Railway** via the included `Procfile`. Connect your GitHub repo on [railway.app](https://railway.app) and set your environment variables in the Railway dashboard.
+
+---
+
+## Disclaimer
+
+For educational and entertainment purposes only.
